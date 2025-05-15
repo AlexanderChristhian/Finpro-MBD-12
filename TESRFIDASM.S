@@ -48,9 +48,45 @@
 .equ STATUS_ERROR,      1
 .equ STATUS_TIMEOUT,    2
 
+; Reference Card ID
+.equ REF_ID_BYTE0,     0x23    ; Expected UID bytes
+.equ REF_ID_BYTE1,     0x46
+.equ REF_ID_BYTE2,     0x02
+.equ REF_ID_BYTE3,     0x52
+
 ; UART Baud-setting for 9600 baud at 16MHz
 .equ UBRR_VALUE, 103  ; 16000000/(16*9600)-1 = 103.17
 
+; String messages stored in program memory
+msg_rfid_ready:
+    .ascii "RFID Ready\r\n"
+    .byte 0
+msg_init:
+    .ascii "Init\r\n"
+    .byte 0
+msg_ant_on:
+    .ascii "Ant ON\r\n"
+    .byte 0
+msg_timeout:
+    .ascii "Timeout\r\n"
+    .byte 0
+msg_error:
+    .ascii "Error\r\n"
+    .byte 0
+msg_invalid_resp:
+    .ascii "Invalid resp\r\n"
+    .byte 0
+msg_card_id:
+    .ascii "Card ID: "
+    .byte 0
+msg_card_correct:
+    .ascii "Card ID is correct\r\n"
+    .byte 0
+msg_card_wrong:
+    .ascii "Card ID is wrong\r\n"
+    .byte 0
+
+.text
 ;========================
 ;         STARTUP
 ;========================
@@ -95,31 +131,11 @@ USART_Init:
     LDI   R16, (1<<UCSZ01)|(1<<UCSZ00)
     STS   UCSR0C, R16
     
-    ; Debug message to verify UART is working
-    LDI   R24, 'R'
-    RCALL USART_Send_Byte
-    LDI   R24, 'F'
-    RCALL USART_Send_Byte
-    LDI   R24, 'I'
-    RCALL USART_Send_Byte
-    LDI   R24, 'D'
-    RCALL USART_Send_Byte
-    LDI   R24, ' '
-    RCALL USART_Send_Byte
-    LDI   R24, 'R'
-    RCALL USART_Send_Byte
-    LDI   R24, 'e'
-    RCALL USART_Send_Byte
-    LDI   R24, 'a'
-    RCALL USART_Send_Byte
-    LDI   R24, 'd'
-    RCALL USART_Send_Byte
-    LDI   R24, 'y'
-    RCALL USART_Send_Byte
-    LDI   R24, '\r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\n'
-    RCALL USART_Send_Byte
+    ; Print initialization message
+    LDI   ZL, lo8(msg_rfid_ready)
+    LDI   ZH, hi8(msg_rfid_ready)
+    RCALL USART_Send_String
+    
     RET
 
 USART_Send_Byte:
@@ -128,6 +144,17 @@ USART_Send_Byte:
     sbrs  r17, UDRE0
     rjmp  USART_Send_Byte
     sts   UDR0, r24
+    RET
+
+; Send a zero-terminated string from program memory
+; Input: Z register points to string in flash
+USART_Send_String:
+    LPM   R24, Z+         ; Load byte from program memory and increment Z
+    CPI   R24, 0          ; Check if end of string
+    BREQ  .Lstring_end    ; If zero, we're done
+    RCALL USART_Send_Byte ; Send the character
+    RJMP  USART_Send_String ; Continue with next character
+.Lstring_end:
     RET
 
 ; Convert binary in R16 → two ASCII hex chars via R17–R18
@@ -245,18 +272,9 @@ SPI_Master_Init:
 ;========================
 RC522_Init:
     ; Send initialization message
-    LDI   R24, 'I'
-    RCALL USART_Send_Byte
-    LDI   R24, 'n'
-    RCALL USART_Send_Byte
-    LDI   R24, 'i'
-    RCALL USART_Send_Byte
-    LDI   R24, 't'
-    RCALL USART_Send_Byte
-    LDI   R24, '\r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\n'
-    RCALL USART_Send_Byte
+    LDI   ZL, lo8(msg_init)
+    LDI   ZH, hi8(msg_init)
+    RCALL USART_Send_String
 
     ; Wait for power stabilization
     LDI   R20, 100
@@ -326,22 +344,10 @@ RC522_Init:
     RCALL RC522_WriteReg
     
     ; Debug message to confirm initialization
-    LDI   R24, 'A'
-    RCALL USART_Send_Byte
-    LDI   R24, 'n'
-    RCALL USART_Send_Byte
-    LDI   R24, 't'
-    RCALL USART_Send_Byte
-    LDI   R24, ' '
-    RCALL USART_Send_Byte
-    LDI   R24, 'O'
-    RCALL USART_Send_Byte
-    LDI   R24, 'N'
-    RCALL USART_Send_Byte
-    LDI   R24, '\r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\n'
-    RCALL USART_Send_Byte
+    LDI   ZL, lo8(msg_ant_on)
+    LDI   ZH, hi8(msg_ant_on)
+    RCALL USART_Send_String
+    
     RET
 
 ;========================
@@ -517,24 +523,9 @@ RC522_ReadUID:
     BRNE  .Lwait_uid
     
     ; Timeout occurred
-    LDI   R24, 'T'
-    RCALL USART_Send_Byte
-    LDI   R24, 'i'
-    RCALL USART_Send_Byte
-    LDI   R24, 'm'
-    RCALL USART_Send_Byte
-    LDI   R24, 'e'
-    RCALL USART_Send_Byte
-    LDI   R24, 'o'
-    RCALL USART_Send_Byte
-    LDI   R24, 'u'
-    RCALL USART_Send_Byte
-    LDI   R24, 't'
-    RCALL USART_Send_Byte
-    LDI   R24, '\r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\n'
-    RCALL USART_Send_Byte
+    LDI   ZL, lo8(msg_timeout)
+    LDI   ZH, hi8(msg_timeout)
+    RCALL USART_Send_String
     RET
 
 .Lgot_uid_response:
@@ -545,20 +536,9 @@ RC522_ReadUID:
     BREQ  .Lno_uid_error
     
     ; Error occurred
-    LDI   R24, 'E'
-    RCALL USART_Send_Byte
-    LDI   R24, 'r'
-    RCALL USART_Send_Byte
-    LDI   R24, 'r'
-    RCALL USART_Send_Byte
-    LDI   R24, 'o'
-    RCALL USART_Send_Byte
-    LDI   R24, 'r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\n'
-    RCALL USART_Send_Byte
+    LDI   ZL, lo8(msg_error)
+    LDI   ZH, hi8(msg_error)
+    RCALL USART_Send_String
     RET
     
 .Lno_uid_error:
@@ -572,68 +552,68 @@ RC522_ReadUID:
     BRGE  .Lvalid_uid_data
     
     ; Not enough data
-    LDI   R24, 'I'
-    RCALL USART_Send_Byte
-    LDI   R24, 'n'
-    RCALL USART_Send_Byte
-    LDI   R24, 'v'
-    RCALL USART_Send_Byte
-    LDI   R24, 'a'
-    RCALL USART_Send_Byte
-    LDI   R24, 'l'
-    RCALL USART_Send_Byte
-    LDI   R24, 'i'
-    RCALL USART_Send_Byte
-    LDI   R24, 'd'
-    RCALL USART_Send_Byte
-    LDI   R24, ' '
-    RCALL USART_Send_Byte
-    LDI   R24, 'r'
-    RCALL USART_Send_Byte
-    LDI   R24, 'e'
-    RCALL USART_Send_Byte
-    LDI   R24, 's'
-    RCALL USART_Send_Byte
-    LDI   R24, 'p'
-    RCALL USART_Send_Byte
-    LDI   R24, '\r'
-    RCALL USART_Send_Byte
-    LDI   R24, '\n'
-    RCALL USART_Send_Byte
+    LDI   ZL, lo8(msg_invalid_resp)
+    LDI   ZH, hi8(msg_invalid_resp)
+    RCALL USART_Send_String
     RET
     
 .Lvalid_uid_data:
     ; Print "Card ID: "
-    LDI   R24, 'C'
-    RCALL USART_Send_Byte
-    LDI   R24, 'a'
-    RCALL USART_Send_Byte
-    LDI   R24, 'r'
-    RCALL USART_Send_Byte
-    LDI   R24, 'd'
-    RCALL USART_Send_Byte
-    LDI   R24, ' '
-    RCALL USART_Send_Byte
-    LDI   R24, 'I'
-    RCALL USART_Send_Byte
-    LDI   R24, 'D'
-    RCALL USART_Send_Byte
-    LDI   R24, ':'
-    RCALL USART_Send_Byte
-    LDI   R24, ' '
-    RCALL USART_Send_Byte
+    LDI   ZL, lo8(msg_card_id)
+    LDI   ZH, hi8(msg_card_id)
+    RCALL USART_Send_String
     
     ; First byte is number of bytes in UID (should be 4)
     LDI   R24, PCD_FIFODataReg
     RCALL RC522_ReadReg
     DEC   R22                 ; Decrement byte count
     
-    ; Now read all the UID bytes
+    ; Initialize match flag to 1 (assume match)
+    LDI   R19, 1              ; R19 = match flag (1=match, 0=no match)
+    
+    ; Now read all the UID bytes and store for comparison
     CLR   R21                 ; Counter for UID bytes
     
+    ; Store UID bytes in R10-R13 for comparison
 .Lread_uid_loop:
     LDI   R24, PCD_FIFODataReg
     RCALL RC522_ReadReg       ; Read one byte of UID from FIFO
+    
+    ; Store byte in appropriate register (R10-R13) based on position
+    CPI   R21, 0
+    BRNE  .Lcheck_byte1
+    MOV   R10, R24            ; First byte in R10
+    CPI   R24, REF_ID_BYTE0   ; Compare with reference
+    BREQ  .Lstore_and_print   ; If equal, continue
+    CLR   R19                 ; If not equal, clear match flag
+    RJMP  .Lstore_and_print
+    
+.Lcheck_byte1:
+    CPI   R21, 1
+    BRNE  .Lcheck_byte2
+    MOV   R11, R24            ; Second byte in R11
+    CPI   R24, REF_ID_BYTE1   ; Compare with reference
+    BREQ  .Lstore_and_print   ; If equal, continue
+    CLR   R19                 ; If not equal, clear match flag
+    RJMP  .Lstore_and_print
+    
+.Lcheck_byte2:
+    CPI   R21, 2
+    BRNE  .Lcheck_byte3
+    MOV   R12, R24            ; Third byte in R12
+    CPI   R24, REF_ID_BYTE2   ; Compare with reference
+    BREQ  .Lstore_and_print   ; If equal, continue
+    CLR   R19                 ; If not equal, clear match flag
+    RJMP  .Lstore_and_print
+    
+.Lcheck_byte3:
+    MOV   R13, R24            ; Fourth byte in R13
+    CPI   R24, REF_ID_BYTE3   ; Compare with reference
+    BREQ  .Lstore_and_print   ; If equal, continue
+    CLR   R19                 ; If not equal, clear match flag
+    
+.Lstore_and_print:
+    ; Print the byte as hex (regardless of match)
     MOV   R16, R24            ; Move to R16 for ByteToHex
     RCALL ByteToHex           ; Print as hex
     
@@ -649,11 +629,29 @@ RC522_ReadUID:
     BRNE  .Lread_uid_loop
     
 .Luid_done:
-    ; Newline at end
+    ; Print newline
     LDI   R24, '\r'
     RCALL USART_Send_Byte
     LDI   R24, '\n'
     RCALL USART_Send_Byte
+    
+    ; Now print the result of the comparison
+    CPI   R19, 1              ; Check if match flag is still set
+    BRNE  .Lcard_id_wrong
+    
+    ; Card ID is correct
+    LDI   ZL, lo8(msg_card_correct)
+    LDI   ZH, hi8(msg_card_correct)
+    RCALL USART_Send_String
+    RJMP  .Lprint_final_newline
+    
+.Lcard_id_wrong:
+    ; Card ID is wrong
+    LDI   ZL, lo8(msg_card_wrong)
+    LDI   ZH, hi8(msg_card_wrong)
+    RCALL USART_Send_String
+    
+.Lprint_final_newline:
     RET
 
 ;========================
