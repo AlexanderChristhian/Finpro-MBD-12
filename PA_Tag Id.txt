@@ -1,0 +1,3 @@
+Valid TAG = AB123456789A
+
+Invalid TAG = CD123456789A
