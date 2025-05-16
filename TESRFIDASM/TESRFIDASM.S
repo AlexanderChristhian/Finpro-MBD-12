@@ -1,5 +1,5 @@
 ;------------------------
-; MFRC522 RFID Reader - SPI Master Implementation
+; MFRC522 RFID Reader with Servo Control - Two State System
 ; ATmega328P (Arduino Uno)
 ;------------------------
 #define __SFR_OFFSET 0x00
@@ -7,11 +7,35 @@
 
 .global main
 
-; Pin definitions
+; Pin definitions for RFID
 .equ SS,    2       ; PB2 (Slave Select)
 .equ MOSI,  3       ; PB3
 .equ MISO,  4       ; PB4
 .equ SCK,   5       ; PB5
+
+; Pin definitions for Servo
+.equ SERVO_PIN, 1   ; PB1 (OC1A)
+.equ BUTTON_PIN, 7  ; PD7
+
+; Pin definitions for indicators
+.equ GREEN_LED, 4   ; PC4 - Success indicator
+.equ RED_LED, 3     ; PC3 - Failure indicator
+.equ BUZZER, 2      ; PC2 - Sound indicator
+
+; Sound pattern durations
+.equ SUCCESS_BUZZ_LEN, 100    ; Length of success beep
+.equ FAILURE_BUZZ_LEN, 50     ; Length of failure beep
+.equ FAILURE_BUZZ_PAUSE, 50   ; Pause between failure beeps
+
+; Servo pulse constants
+.equ MIN_PULSE, 3000     ; 544 us / 0.5 us per tick 
+.equ MAX_PULSE, 1000     ; 2400 us / 0.5 us per tick
+.equ TOP_COUNT, 39999    ; 20 ms → 50Hz PWM
+.equ DELAY_COUNT, 50     ; Delay for debouncing
+
+; State definitions
+.equ STATE_RFID, 0       ; State 1: Reading RFID
+.equ STATE_BUTTON, 1     ; State 2: Monitoring button
 
 ; MFRC522 Register addresses
 .equ PCD_CommandReg,    0x01
@@ -85,35 +109,269 @@ msg_card_correct:
 msg_card_wrong:
     .ascii "Card ID is wrong\r\n"
     .byte 0
+msg_state_change:
+    .ascii "Changing to state: "
+    .byte 0
+msg_unlocked:
+    .ascii "Door unlocked\r\n"
+    .byte 0
+msg_locked:
+    .ascii "Door locked\r\n"
+    .byte 0
 
 .text
 ;========================
 ;         STARTUP
 ;========================
 main:
+    ; Initialize stack pointer
+    LDI   R16, hi8(RAMEND)
+    OUT   SPH, R16
+    LDI   R16, lo8(RAMEND)
+    OUT   SPL, R16
+    
+    ; Initialize system state
+    LDI   R30, STATE_RFID      ; R30 will be our state variable (0=RFID, 1=BUTTON)
+    
+    ; Initialize USART
     RCALL USART_Init
+    
+    ; Initialize SPI
     RCALL SPI_Master_Init
+    
+    ; Initialize RFID
     RCALL RC522_Init
+    
+    ; Initialize Servo
+    RCALL Servo_Init
+    
+    ; Initialize indicator pins
+    RCALL Indicator_Init
+    
+    ; Start in state 1 (RFID reading)
+    RJMP  STATE_RFID_LOOP
 
-main_loop:
-    ; Small delay between reads
-    LDI   R20, 100
-delay_loop_start:
+;========================
+;   Indicator Initialization
+;========================
+Indicator_Init:
+    ; Set PC2 (BUZZER), PC3 (RED_LED), and PC4 (GREEN_LED) as outputs
+    SBI   DDRC, BUZZER
+    SBI   DDRC, RED_LED
+    SBI   DDRC, GREEN_LED
+    
+    ; Ensure all indicators are initially off
+    CBI   PORTC, BUZZER
+    CBI   PORTC, RED_LED
+    CBI   PORTC, GREEN_LED
+    
+    RET
+
+;========================
+;   Buzzer Sound Patterns
+;========================
+; Success sound - single long beep
+Success_Sound:
+    ; Turn on buzzer
+    SBI   PORTC, BUZZER
+    
+    ; Wait for beep duration
+    LDI   R20, SUCCESS_BUZZ_LEN
+success_buzz:
     RCALL Delay_ms
     DEC   R20
-    BRNE  delay_loop_start
+    BRNE  success_buzz
+    
+    ; Turn off buzzer
+    CBI   PORTC, BUZZER
+    RET
+
+; Failure sound - three short beeps
+Failure_Sound:
+    ; First beep
+    SBI   PORTC, BUZZER
+    LDI   R20, FAILURE_BUZZ_LEN
+failure_buzz1:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  failure_buzz1
+    CBI   PORTC, BUZZER
+    
+    ; Pause
+    LDI   R20, FAILURE_BUZZ_PAUSE
+failure_pause1:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  failure_pause1
+    
+    ; Second beep
+    SBI   PORTC, BUZZER
+    LDI   R20, FAILURE_BUZZ_LEN
+failure_buzz2:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  failure_buzz2
+    CBI   PORTC, BUZZER
+    
+    ; Pause
+    LDI   R20, FAILURE_BUZZ_PAUSE
+failure_pause2:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  failure_pause2
+    
+    ; Third beep
+    SBI   PORTC, BUZZER
+    LDI   R20, FAILURE_BUZZ_LEN
+failure_buzz3:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  failure_buzz3
+    CBI   PORTC, BUZZER
+    
+    RET
+
+;========================
+;    MAIN STATE LOOPS
+;========================
+STATE_RFID_LOOP:
+    ; Ensure indicators are off at the start of the state
+    CBI   PORTC, GREEN_LED
+    CBI   PORTC, RED_LED
+    
+    ; Small delay between reads
+    LDI   R20, 50
+delay_loop_rfid:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  delay_loop_rfid
     
     ; Send heartbeat character to show code is running
     LDI   R24, '.'
     RCALL USART_Send_Byte
     
-    RCALL RC522_IsCardPresent  ; First check if card is present
+    ; Check if card is present
+    RCALL RC522_IsCardPresent  
     CPI   R24, STATUS_OK
-    BRNE  main_loop           ; If no card, continue loop
+    BRNE  STATE_RFID_LOOP      ; If no card, continue loop
     
     ; If card is present, read its UID
     RCALL RC522_ReadUID
-    RJMP  main_loop
+    
+    ; Check if we should transition to state 2 (button monitoring)
+    CPI   R19, 1               ; R19 is our card match flag (1=match)
+    BREQ  RFID_CORRECT         ; RFID is correct, light green LED and sound success
+    
+    ; RFID is incorrect, light red LED and sound failure
+    SBI   PORTC, RED_LED       ; Turn on red LED
+    RCALL Failure_Sound        ; Play failure sound
+    
+    ; Continue in state 1
+    RJMP  STATE_RFID_LOOP
+
+RFID_CORRECT:
+    ; Card is correct, activate green LED and success sound
+    SBI   PORTC, GREEN_LED     ; Turn on green LED
+    RCALL Success_Sound        ; Play success sound
+    
+    ; Short delay to see the green LED
+    LDI   R20, 100
+rfid_correct_delay:
+    RCALL Delay_ms
+    DEC   R20
+    BRNE  rfid_correct_delay
+    
+    ; Now transition to button state
+    RJMP  TRANSITION_TO_STATE_BUTTON
+
+TRANSITION_TO_STATE_BUTTON:
+    ; Turn off all indicator LEDs
+    CBI   PORTC, GREEN_LED
+    CBI   PORTC, RED_LED
+    
+    ; Print state change message
+    LDI   ZL, lo8(msg_state_change)
+    LDI   ZH, hi8(msg_state_change)
+    RCALL USART_Send_String
+    LDI   R24, '2'
+    RCALL USART_Send_Byte
+    LDI   R24, '\r'
+    RCALL USART_Send_Byte
+    LDI   R24, '\n'
+    RCALL USART_Send_Byte
+    
+    ; Print unlock message
+    LDI   ZL, lo8(msg_unlocked)
+    LDI   ZH, hi8(msg_unlocked)
+    RCALL USART_Send_String
+    
+    ; Set state to BUTTON
+    LDI   R30, STATE_BUTTON
+    
+    ; Set servo to MAX_PULSE to unlock
+    LDI   R24, hi8(MAX_PULSE)
+    LDI   R25, lo8(MAX_PULSE)
+    RCALL SET_OCR1A
+    
+    ; Initialize button flag
+    CLR   R29            ; R29 = button flag (0=not pressed, 1=pressed)
+    
+    ; Jump to button monitoring loop
+    RJMP  STATE_BUTTON_LOOP
+
+STATE_BUTTON_LOOP:
+    ; Check button status (logic low when pressed due to pull-up)
+    SBIC  PIND, BUTTON_PIN     ; Skip if bit high (button not pressed)
+    RJMP  BUTTON_PRESSED_STATE2
+    
+    ; Button not pressed
+    CLR   R29                  ; Reset button flag
+    
+    ; Continue in state 2
+    RJMP  STATE_BUTTON_LOOP
+
+BUTTON_PRESSED_STATE2:
+    ; Check if button was already pressed
+    TST   R29
+    BRNE  STATE_BUTTON_LOOP    ; If already pressed, ignore
+    
+    ; Set button pressed flag
+    LDI   R29, 1
+    
+    ; Provide feedback with buzzer and green LED
+    SBI   PORTC, GREEN_LED     ; Turn on green LED
+    RCALL Success_Sound        ; Play success sound
+    
+    ; Print state change message
+    LDI   ZL, lo8(msg_state_change)
+    LDI   ZH, hi8(msg_state_change)
+    RCALL USART_Send_String
+    LDI   R24, '1'
+    RCALL USART_Send_Byte
+    LDI   R24, '\r'
+    RCALL USART_Send_Byte
+    LDI   R24, '\n'
+    RCALL USART_Send_Byte
+    
+    ; Print lock message
+    LDI   ZL, lo8(msg_locked)
+    LDI   ZH, hi8(msg_locked)
+    RCALL USART_Send_String
+    
+    ; Set state back to RFID
+    LDI   R30, STATE_RFID
+    
+    ; Set servo to MIN_PULSE to lock
+    LDI   R24, hi8(MIN_PULSE)
+    LDI   R25, lo8(MIN_PULSE)
+    RCALL SET_OCR1A
+    
+    ; Turn off all indicators before switching states
+    CBI   PORTC, GREEN_LED
+    CBI   PORTC, RED_LED
+    
+    ; Jump to RFID state
+    RJMP  STATE_RFID_LOOP
 
 ;========================
 ;   USART / Serial TX
@@ -248,6 +506,49 @@ skip_tens:
     ; Units place (always print)
     SUBI  R24, -'0'           ; Convert to ASCII
     RCALL USART_Send_Byte
+    RET
+
+;========================
+;   Servo Initialization
+;========================
+Servo_Init:
+    ; Set PB1 (OC1A) as output
+    SBI   DDRB, SERVO_PIN
+    
+    ; Set PD7 as input
+    CBI   DDRD, BUTTON_PIN
+    ; Set pull-up resistor for PD7
+    SBI   PORTD, BUTTON_PIN
+    
+    ; Timer1 → Fast PWM mode (WGM13:0 = 14)
+    LDI   R16, (1<<WGM11)
+    STS   TCCR1A, R16
+    LDI   R16, (1<<WGM13)|(1<<WGM12)|(1<<CS11)   ; prescaler = 8
+    STS   TCCR1B, R16
+    
+    ; Non-inverting mode for OC1A
+    LDS   R16, TCCR1A
+    ORI   R16, (1<<COM1A1)
+    STS   TCCR1A, R16
+    
+    ; Set ICR1 = 20ms (TOP)
+    LDI   R16, hi8(TOP_COUNT)
+    STS   ICR1H, R16
+    LDI   R16, lo8(TOP_COUNT)
+    STS   ICR1L, R16
+    
+    ; Start with door locked (MIN_PULSE)
+    LDI   R24, hi8(MIN_PULSE)
+    LDI   R25, lo8(MIN_PULSE)
+    RCALL SET_OCR1A
+    
+    RET
+
+; Set OCR1A register for servo control
+; Input: R24:R25 = pulse width
+SET_OCR1A:
+    STS   OCR1AH, R24
+    STS   OCR1AL, R25
     RET
 
 ;========================
