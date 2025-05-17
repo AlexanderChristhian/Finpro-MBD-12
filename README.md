@@ -101,9 +101,12 @@ Gambaran hasil pada rangkaian proteus :
 ![alt text](<PNG Markdown/Screenshot Proteus Berhasil.jpg>)
 
 Video Hasil pada rangkaian proteus :
-<video controls src="PNG Markdown/2025-05-17 23-00-23.mp4" title="Title"></video>
+
+<video controls src="https://youtu.be/Z_YuzZstceQ" title="Title"></video>
+
 Video Hasil pada rangkaian fisik : 
-<video controls src="PNG Markdown/Video Fisik Berhasil.mp4" title="Title"></video>
+
+<video controls src="https://youtube.com/shorts/x-vl-7Bu4g4" title="Title"></video>
 
 ## Conclusion and future work
 
