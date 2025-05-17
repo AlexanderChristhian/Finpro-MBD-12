@@ -102,11 +102,11 @@ Gambaran hasil pada rangkaian proteus :
 
 Video Hasil pada rangkaian proteus :
 
-<video controls src="https://youtu.be/Z_YuzZstceQ" title="Title"></video>
+https://youtu.be/Z_YuzZstceQ
 
 Video Hasil pada rangkaian fisik : 
 
-<video controls src="https://youtube.com/shorts/x-vl-7Bu4g4" title="Title"></video>
+https://youtube.com/shorts/x-vl-7Bu4g4?feature=share
 
 ## Conclusion and future work
 
