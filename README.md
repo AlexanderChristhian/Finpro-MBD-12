@@ -1,5 +1,11 @@
 # LockSmart - Penyimpanan Berbasis RFID untuk Perlindungan Maksimal
 
+## Anggota Kelompok 
+- Alexander Christhian - 2306267025
+- Maharaka Fadhilah - 2306225520
+- Naufal Hadi Rashikin - 2306231366
+- Teufik Ali Hadzalic - 2306267012
+
 ## Introduction to the problem and the solution
 
 Dalam dunia saat ini, mengamankan barang berharga, dokumen rahasia, dan peralatan sensitif telah menjadi semakin penting. Sistem kunci konvensional rentan terhadap duplikasi, pencurian, atau kehilangan kunci, yang menciptakan kerentanan keamanan. Selain itu, mengelola kunci fisik untuk berbagai unit penyimpanan bisa merepotkan dan tidak efisien.
